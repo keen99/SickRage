@@ -77,13 +77,13 @@ class NameParser(object):
 
     def _compile_regexes(self, regexMode):
         if regexMode == self.ANIME_REGEX:
-#            logger.log(u"Using ANIME regexs", logger.DEBUG)
+            logger.log(u"Using ANIME regexs", logger.DEBUG)
             uncompiled_regex = [regexes.anime_regexes, regexes.normal_regexes]
         elif regexMode == self.NORMAL_REGEX:
-#            logger.log(u"Using NORMAL regexs", logger.DEBUG)
+            logger.log(u"Using NORMAL regexs", logger.DEBUG)
             uncompiled_regex = [regexes.normal_regexes]
         else:
-#            logger.log(u"Using ALL regexes", logger.DEBUG)
+            logger.log(u"Using ALL regexes", logger.DEBUG)
             uncompiled_regex = [regexes.normal_regexes, regexes.anime_regexes]
 
         self.compiled_regexes = []

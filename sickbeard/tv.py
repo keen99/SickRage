@@ -2000,7 +2000,7 @@ class TVEpisode(object):
 
         logger.log(str(self.show.indexerid) + u": Saving episode details to database", logger.DEBUG)
 
-        logger.log(u"TV: savetoDB STATUS IS " + str(self.status) + " for: " + self.name, logger.DEBUG)
+        logger.log(u"STATUS IS " + str(self.status), logger.DEBUG)
 
         newValueDict = {"indexerid": self.indexerid,
                         "indexer": self.indexer,
