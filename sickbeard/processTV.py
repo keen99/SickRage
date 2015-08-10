@@ -399,8 +399,9 @@ def already_postprocessed(dirName, videofile, force, result):
     myDB = db.DBConnection()
     sqlResult = myDB.select("SELECT * FROM tv_episodes WHERE release_name = ?", [dirName])
     if sqlResult:
-        result.output += logHelper(u"PROCESSTV: You're trying to post process a dir that's already been processed, skipping",
-                               logger.DEBUG)
+#lets quiet these down for now.
+#        result.output += logHelper(u"PROCESSTV: You're trying to post process a dir that's already been processed, skipping: " + dirName,
+#                               logger.DEBUG)
         return True
 
     else:
@@ -410,8 +411,9 @@ def already_postprocessed(dirName, videofile, force, result):
 
         sqlResult = myDB.select("SELECT * FROM tv_episodes WHERE release_name = ?", [videofile.rpartition('.')[0]])
         if sqlResult:
-            result.output += logHelper(u"PROCESSTV: You're trying to post process a video that's already been processed, skipping",
-                                   logger.DEBUG)
+#dsr
+#            result.output += logHelper(u"PROCESSTV: You're trying to post process a video that's already been processed, skipping: " + videofile.rpartition('.')[0],
+#                                   logger.DEBUG)
             return True
         
         #Needed if we have downloaded the same episode @ different quality
@@ -434,8 +436,8 @@ def already_postprocessed(dirName, videofile, force, result):
         search_sql += " and history.resource LIKE ?"
         sqlResult = myDB.select(search_sql, [u'%' + videofile])
         if sqlResult:
-            result.output += logHelper(u"PROCESSTV: You're trying to post process a video that's already been processed, skipping",
-                                   logger.DEBUG)
+#            result.output += logHelper(u"PROCESSTV: You're trying to post process a video that's already been processed, skipping: " + videofile,
+#                                   logger.DEBUG)
             return True
 
     return False
