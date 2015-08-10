@@ -23,7 +23,7 @@ import re
 import sqlite3
 import time
 import threading
-
+import chardet
 import sickbeard
 
 from sickbeard import encodingKludge as ek
@@ -58,7 +58,6 @@ class DBConnection(object):
 
                 self.connection = sqlite3.connect(dbFilename(self.filename, self.suffix), 20, check_same_thread=False)
                 self.connection.text_factory = self._unicode_text_factory
-                self.connection.isolation_level = None
 
                 db_cons[self.filename] = self.connection
             else:
@@ -78,7 +77,7 @@ class DBConnection(object):
                 return self.connection.cursor().execute(query)
             return self.connection.cursor().execute(query, args)
         except Exception as e:
-            raise e
+            raise
 
     def execute(self, query, args=None, fetchall=False, fetchone=False):
         try:
@@ -89,7 +88,7 @@ class DBConnection(object):
             else:
                 return self._execute(query, args)
         except Exception as e:
-            raise e
+            raise
 
     def checkDBVersion(self):
 
@@ -108,7 +107,7 @@ class DBConnection(object):
 
     def mass_action(self, querylist=[], logTransaction=False, fetchall=False):
         # remove None types
-        querylist = [i for i in querylist if i is not None]
+        querylist = [i for i in querylist if i is not None and len(i)]
 
         sqlResult = []
         attempt = 0
@@ -125,7 +124,7 @@ class DBConnection(object):
                             if logTransaction:
                                 logger.log(qu[0] + " with args " + str(qu[1]), logger.DEBUG)
                             sqlResult.append(self.execute(qu[0], qu[1], fetchall=fetchall))
-
+                    self.connection.commit()
                     logger.log(u"Transaction with " + str(len(querylist)) + u" queries executed", logger.DEBUG)
 
                     # finished
@@ -168,6 +167,7 @@ class DBConnection(object):
                         logger.log(self.filename + ": " + query + " with args " + str(args), logger.DB)
 
                     sqlResult = self.execute(query, args, fetchall=fetchall, fetchone=fetchone)
+                    self.connection.commit()
 
                     # get out of the connection attempt loop since we were successful
                     break
@@ -230,9 +230,10 @@ class DBConnection(object):
 
     def _unicode_text_factory(self, x):
         try:
+            # Just revert to the old code for now, until we can fix unicode
             return unicode(x, 'utf-8')
         except:
-            return unicode(x, sickbeard.SYS_ENCODING)
+            return unicode(x, sickbeard.SYS_ENCODING,errors="ignore")
 
     def _dict_factory(self, cursor, row):
         d = {}
@@ -266,7 +267,7 @@ class DBSanityCheck(object):
 # ===============
 
 def upgradeDatabase(connection, schema):
-    logger.log(u"Checking database structure...", logger.INFO)
+    logger.log(u"Checking database structure..." + connection.filename, logger.DEBUG)
     _processUpgrade(connection, schema)
 
 
@@ -287,7 +288,7 @@ def _processUpgrade(connection, upgradeClass):
     instance = upgradeClass(connection)
     logger.log(u"Checking " + prettyName(upgradeClass.__name__) + " database upgrade", logger.DEBUG)
     if not instance.test():
-        logger.log(u"Database upgrade required: " + prettyName(upgradeClass.__name__), logger.INFO)
+        logger.log(u"Database upgrade required: " + prettyName(upgradeClass.__name__), logger.DEBUG)
         try:
             instance.execute()
         except sqlite3.DatabaseError, e:

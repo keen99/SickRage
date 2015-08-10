@@ -22,6 +22,7 @@ import datetime
 import urlparse
 import sickbeard
 import generic
+import urllib
 from sickbeard.common import Quality
 from sickbeard import logger
 from sickbeard import tvcache
@@ -31,10 +32,10 @@ from sickbeard import helpers
 from sickbeard import show_name_helpers
 from sickbeard.exceptions import ex
 from sickbeard import clients
-from lib import requests
-from lib.requests import exceptions
+import requests
+from requests import exceptions
 from sickbeard.bs4_parser import BS4Parser
-from lib.unidecode import unidecode
+from unidecode import unidecode
 from sickbeard.helpers import sanitizeSceneName
 
 
@@ -87,7 +88,7 @@ class TorrentBytesProvider(generic.TorrentProvider):
         self.session = requests.Session()
 
         try:
-            response = self.session.post(self.urls['login'], data=login_params, timeout=30, verify=False)
+            response = self.session.post(self.urls['login'], data=login_params, timeout=30)
         except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError), e:
             logger.log(u'Unable to connect to ' + self.name + ' provider: ' + ex(e), logger.ERROR)
             return False
@@ -146,7 +147,7 @@ class TorrentBytesProvider(generic.TorrentProvider):
 
         return [search_string]
 
-    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0):
+    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0, epObj=None):
 
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
@@ -160,7 +161,7 @@ class TorrentBytesProvider(generic.TorrentProvider):
                 if isinstance(search_string, unicode):
                     search_string = unidecode(search_string)
 
-                searchURL = self.urls['search'] % (search_string, self.categories)
+                searchURL = self.urls['search'] % (urllib.quote(search_string), self.categories)
 
                 logger.log(u"Search string: " + searchURL, logger.DEBUG)
 
@@ -207,7 +208,7 @@ class TorrentBytesProvider(generic.TorrentProvider):
                                 continue
 
                             item = title, download_url, id, seeders, leechers
-                            logger.log(u"Found result: " + title + "(" + searchURL + ")", logger.DEBUG)
+                            logger.log(u"Found result: " + title.replace(' ','.') + " (" + searchURL + ")", logger.DEBUG)
 
                             items[mode].append(item)
 
@@ -226,8 +227,7 @@ class TorrentBytesProvider(generic.TorrentProvider):
         title, url, id, seeders, leechers = item
 
         if title:
-            title = u'' + title
-            title = title.replace(' ', '.')
+            title = self._clean_title_from_provider(title)
 
         if url:
             url = str(url).replace('&amp;', '&')

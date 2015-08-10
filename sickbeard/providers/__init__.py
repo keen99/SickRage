@@ -16,30 +16,43 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ['ezrss',
-           'womble',
+__all__ = ['womble',
            'btn',
            'thepiratebay',
-           'oldpiratebay',
            'kat',
            'torrentleech',
            'scc',
            'hdtorrents',
            'torrentday',
            'hdbits',
-		   'hounddawgs',
+           'hounddawgs',
            'iptorrents',
            'omgwtfnzbs',
            'nextgen',
            'speedcd',
            'nyaatorrents',
-           'fanzub',
+           'animenzb',
            'torrentbytes',
            'animezb',
+           'frenchtorrentdb',
            'freshontv',
+           'titansoftv',
+           'libertalia',
+           'morethantv',
            'bitsoup',
            't411',
            'tokyotoshokan',
+           'alpharatio',
+           'shazbat',
+           'rarbg',
+           'tntvillage',
+           'binsearch',
+           'bluetigers',
+           'cpasbien',
+           'fnt',
+           'xthor',
+           'scenetime',
+           'btdigg',
 ]
 
 import sickbeard
@@ -58,6 +71,11 @@ def sortedProviderList(randomize=False):
     # add all modules in the priority list, in order
     for curModule in sickbeard.PROVIDER_ORDER:
         if curModule in providerDict:
+            newList.append(providerDict[curModule])
+
+    # add all enabled providers first
+    for curModule in providerDict:
+        if providerDict[curModule] not in newList and providerDict[curModule].isEnabled():
             newList.append(providerDict[curModule])
 
     # add any modules that are missing from that list
@@ -162,6 +180,7 @@ def makeTorrentRssProvider(configString):
         return None
 
     cookies = None
+    titleTAG = 'title'
     search_mode = 'eponly'
     search_fallback = 0
     enable_daily = 0
@@ -169,12 +188,14 @@ def makeTorrentRssProvider(configString):
 
     try:
         values = configString.split('|')
-        if len(values) == 8:
+        if len(values) == 9:
+            name, url, cookies, titleTAG, enabled, search_mode, search_fallback, enable_daily, enable_backlog = values
+        elif len(values) == 8:
             name, url, cookies, enabled, search_mode, search_fallback, enable_daily, enable_backlog = values
         else:
             name = values[0]
             url = values[1]
-            enabled = values[3]
+            enabled = values[4]
     except ValueError:
         logger.log(u"Skipping RSS Torrent provider string: '" + configString + "', incorrect format",
                    logger.ERROR)
@@ -185,7 +206,7 @@ def makeTorrentRssProvider(configString):
     except:
         return
 
-    newProvider = torrentRss.TorrentRssProvider(name, url, cookies, search_mode, search_fallback, enable_daily,
+    newProvider = torrentRss.TorrentRssProvider(name, url, cookies, titleTAG, search_mode, search_fallback, enable_daily,
                                                 enable_backlog)
     newProvider.enabled = enabled == '1'
 
@@ -193,8 +214,11 @@ def makeTorrentRssProvider(configString):
 
 
 def getDefaultNewznabProviders():
-    return 'Sick Beard Index|http://lolo.sickbeard.com/|0|5030,5040|0|eponly|0|0|0!!!NZBs.org|https://nzbs.org/||5030,5040|0|eponly|0|0|0!!!Usenet-Crawler|https://www.usenet-crawler.com/||5030,5040|0|eponly|0|0|0'
-
+    #name|url|key|catIDs|enabled|search_mode|search_fallback|enable_daily|enable_backlog
+    return 'NZB.Cat|https://nzb.cat/||5030,5040,5010|0|eponly|1|1|1!!!' + \
+           'NZBGeek|https://api.nzbgeek.info/||5030,5040|0|eponly|0|0|0!!!' + \
+           'NZBs.org|https://nzbs.org/||5030,5040|0|eponly|0|0|0!!!' + \
+           'Usenet-Crawler|https://www.usenet-crawler.com/||5030,5040|0|eponly|0|0|0'
 
 def getProviderModule(name):
     name = name.lower()

@@ -39,9 +39,9 @@ from sickbeard.show_name_helpers import allPossibleShowNames, sanitizeSceneName
 from sickbeard.common import Overview
 from sickbeard.exceptions import ex
 from sickbeard import encodingKludge as ek
-from lib import requests
-from lib.requests import exceptions
-from lib.unidecode import unidecode
+import requests
+from requests import exceptions
+from unidecode import unidecode
 
 
 class ThePirateBayProvider(generic.TorrentProvider):
@@ -59,7 +59,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
 
         self.cache = ThePirateBayCache(self)
 
-        self.urls = {'base_url': 'https://thepiratebay.se/'}
+        self.urls = {'base_url': 'https://thepiratebay.gd/'}
 
         self.url = self.urls['base_url']
 
@@ -122,7 +122,9 @@ class ThePirateBayProvider(generic.TorrentProvider):
         filesList = re.findall('<td.+>(.*?)</td>', data)
 
         if not filesList:
-            logger.log(u"Unable to get the torrent file list for " + title, logger.ERROR)
+            # disabled errormsg for now
+            # logger.log(u"Unable to get the torrent file list for " + title, logger.ERROR)
+            return None
 
         videoFiles = filter(lambda x: x.rpartition(".")[2].lower() in mediaExtensions, filesList)
 
@@ -216,7 +218,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
 
         return [search_string]
 
-    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0):
+    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0, epObj=None):
 
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
@@ -237,7 +239,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
                 if not data:
                     continue
 
-                re_title_url = self.proxy._buildRE(self.re_title_url)
+                re_title_url = self.proxy._buildRE(self.re_title_url).replace('&amp;f=norefer', '')
                 matches = re.compile(re_title_url, re.DOTALL).finditer(urllib.unquote(data))
                 for torrent in matches:
                     title = torrent.group('title').replace('_',
@@ -280,7 +282,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
         title, url, id, seeders, leechers = item
 
         if title:
-            title = u'' + title.replace(' ', '.')
+            title = self._clean_title_from_provider(title)
 
         if url:
             url = url.replace('&amp;', '&')

@@ -22,7 +22,8 @@ import datetime
 import sickbeard
 import generic
 import requests
-import requests.exceptions
+from requests import exceptions
+import urllib
 
 from sickbeard.common import Quality
 from sickbeard import logger
@@ -87,10 +88,10 @@ class BitSoupProvider(generic.TorrentProvider):
         }
 
         if not self.session:
-            self.session = requests.session()
+            self.session = requests.Session()
 
         try:
-            response = self.session.post(self.urls['login'], data=login_params, timeout=30, verify=False)
+            response = self.session.post(self.urls['login'], data=login_params, timeout=30)
         except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError), e:
             logger.log(u'Unable to connect to ' + self.name + ' provider: ' + ex(e), logger.ERROR)
             return False
@@ -149,7 +150,7 @@ class BitSoupProvider(generic.TorrentProvider):
 
         return [search_string]
 
-    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0):
+    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0, epObj=None):
 
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
@@ -163,7 +164,7 @@ class BitSoupProvider(generic.TorrentProvider):
                 if isinstance(search_string, unicode):
                     search_string = unidecode(search_string)
 
-                searchURL = self.urls['search'] % (search_string, self.categories)
+                searchURL = self.urls['search'] % (urllib.quote(search_string), self.categories)
 
                 logger.log(u"Search string: " + searchURL, logger.DEBUG)
 
@@ -208,7 +209,7 @@ class BitSoupProvider(generic.TorrentProvider):
                                 continue
 
                             item = title, download_url, id, seeders, leechers
-                            logger.log(u"Found result: " + title + "(" + searchURL + ")", logger.DEBUG)
+                            logger.log(u"Found result: " + title.replace(' ','.') + " (" + searchURL + ")", logger.DEBUG)
 
                             items[mode].append(item)
 
@@ -227,8 +228,7 @@ class BitSoupProvider(generic.TorrentProvider):
         title, url, id, seeders, leechers = item
 
         if title:
-            title = u'' + title
-            title = title.replace(' ', '.')
+            title = self._clean_title_from_provider(title)
 
         if url:
             url = str(url).replace('&amp;', '&')

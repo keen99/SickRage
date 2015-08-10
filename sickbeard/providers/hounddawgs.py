@@ -22,6 +22,7 @@ import datetime
 import urlparse
 import sickbeard
 import generic
+import urllib
 from sickbeard.common import Quality, cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
@@ -32,10 +33,10 @@ from sickbeard import show_name_helpers
 from sickbeard.common import Overview
 from sickbeard.exceptions import ex
 from sickbeard import clients
-from lib import requests
-from lib.requests import exceptions
+import requests
+from requests import exceptions
 from sickbeard.bs4_parser import BS4Parser
-from lib.unidecode import unidecode
+from unidecode import unidecode
 from sickbeard.helpers import sanitizeSceneName
 
 
@@ -56,9 +57,9 @@ class HoundDawgsProvider(generic.TorrentProvider):
 
         self.cache = HoundDawgsCache(self)
 		
-        self.urls = {'base_url': 'http://192.99.10.104/',
-		        'search': 'http://192.99.10.104/torrents.php?type=&userid=&searchstr=%s&searchimdb=&searchtags=&order_by=s3&order_way=desc&%s',
-                'login': 'http://192.99.10.104/login.php',
+        self.urls = {'base_url': 'https://hounddawgs.org/',
+		        'search': 'https://hounddawgs.org/torrents.php?type=&userid=&searchstr=%s&searchimdb=&searchtags=&order_by=s3&order_way=desc&%s',
+                'login': 'https://hounddawgs.org/login.php',
         }
 
         self.url = self.urls['base_url']
@@ -87,13 +88,15 @@ class HoundDawgsProvider(generic.TorrentProvider):
         self.session = requests.Session()
 
         try:
-            response = self.session.post(self.urls['login'], data=login_params, timeout=30, verify=False)
+            self.session.get(self.urls['base_url'], timeout=30)
+            response = self.session.post(self.urls['login'], data=login_params, timeout=30)
         except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError), e:
             logger.log(u'Unable to connect to ' + self.name + ' provider: ' + ex(e), logger.ERROR)
             return False
 
         if re.search('Dit brugernavn eller kodeord er forkert.', response.text) \
                 or re.search('<title>Login :: HoundDawgs</title>', response.text) \
+                or re.search('Dine cookies er ikke aktiveret.', response.text) \
                 or response.status_code == 401:
             logger.log(u'Invalid username or password for ' + self.name + ' Check your settings', logger.ERROR)
             return False
@@ -148,15 +151,16 @@ class HoundDawgsProvider(generic.TorrentProvider):
 
         return [search_string]
 
-    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0):
+    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0, epObj=None):
 
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
 
         if not self._doLogin():
-            return []
+            return results
 
         for mode in search_params.keys():
+		
             for search_string in search_params[mode]:
 
                 if isinstance(search_string, unicode):
@@ -165,7 +169,7 @@ class HoundDawgsProvider(generic.TorrentProvider):
                 #if mode == 'RSS':
                     #searchURL = self.urls['index'] % self.categories
                 #else:
-                searchURL = self.urls['search'] % (search_string, self.categories)
+                searchURL = self.urls['search'] % (urllib.quote(search_string), self.categories)
 
                 logger.log(u"Search string: " + searchURL, logger.DEBUG)
 
@@ -214,29 +218,20 @@ class HoundDawgsProvider(generic.TorrentProvider):
                                 
                                 download_url = self.urls['base_url']+allAs[0].attrs['href']
                                 id = link.replace(self.urls['base_url']+'torrents.php?id=','')
-                                seeders = int(torrent[7].string)
-                                leechers = int(torrent[8].string)
                                 
                             except (AttributeError, TypeError):
-                                continue
-
-                            #Filter unseeded torrent
-                            if mode != 'RSS' and (seeders < self.minseed or leechers < self.minleech):
                                 continue
 
                             if not title or not download_url:
                                 continue
 
-                            item = title, download_url, id, seeders, leechers
-                            logger.log(u"Found result: " + title + "(" + download_url + ")", logger.DEBUG)
+                            item = title, download_url
+                            logger.log(u"Found result: " + title.replace(' ','.') + " (" + download_url + ")", logger.DEBUG)
 
                             items[mode].append(item)
 
                 except Exception, e:
                     logger.log(u"Failed parsing " + self.name + " Traceback: " + traceback.format_exc(), logger.ERROR)
-
-            #For each search mode sort all the items by seeders
-            items[mode].sort(key=lambda tup: tup[3], reverse=True)
 
             results += items[mode]
 
@@ -244,7 +239,7 @@ class HoundDawgsProvider(generic.TorrentProvider):
 
     def _get_title_and_url(self, item):
 
-        title, url, id, seeders, leechers = item
+        title, url = item
 
         if title:
             title = u'' + title

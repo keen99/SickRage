@@ -37,7 +37,7 @@ from sickbeard import db
 from sickbeard import classes
 from sickbeard.show_name_helpers import allPossibleShowNames, sanitizeSceneName
 from sickbeard.bs4_parser import BS4Parser
-from lib.unidecode import unidecode
+from unidecode import unidecode
 
 
 class KATProvider(generic.TorrentProvider):
@@ -55,7 +55,7 @@ class KATProvider(generic.TorrentProvider):
 
         self.cache = KATCache(self)
 
-        self.urls = {'base_url': 'https://kickass.to/'}
+        self.urls = {'base_url': 'https://kat.cr/'}
 
         self.url = self.urls['base_url']
 
@@ -165,20 +165,17 @@ class KATProvider(generic.TorrentProvider):
         search_string = {'Season': []}
 
         for show_name in set(allPossibleShowNames(self.show)):
+            ep_string = sanitizeSceneName(show_name) + ' '
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + ' ' + str(ep_obj.airdate).split('-')[0]
-                search_string['Season'].append(ep_string)
-                ep_string = show_name + ' Season ' + str(ep_obj.airdate).split('-')[0]
+                ep_string += str(ep_obj.airdate).split('-')[0]
                 search_string['Season'].append(ep_string)
             elif ep_obj.show.anime:
-                ep_string = show_name + ' ' + "%02d" % ep_obj.scene_absolute_number
+                ep_string += "%02d" % ep_obj.scene_absolute_number
                 search_string['Season'].append(ep_string)
             else:
-                ep_string = show_name + ' S%02d' % int(ep_obj.scene_season) + ' -S%02d' % int(
-                    ep_obj.scene_season) + 'E' + ' category:tv'  #1) showName SXX -SXXE
+                ep_string = '%s S%02d -S%02dE category:tv' % (sanitizeSceneName(show_name), ep_obj.scene_season, ep_obj.scene_season) #1) showName SXX -SXXE
                 search_string['Season'].append(ep_string)
-                ep_string = show_name + ' Season ' + str(
-                    ep_obj.scene_season) + ' -Ep*' + ' category:tv'  # 2) showName Season X
+                ep_string = '%s "Season %d" -Ep* category:tv' % (sanitizeSceneName(show_name), ep_obj.scene_season) # 2) showName "Season X"
                 search_string['Season'].append(ep_string)
 
         return [search_string]
@@ -186,35 +183,32 @@ class KATProvider(generic.TorrentProvider):
     def _get_episode_search_strings(self, ep_obj, add_string=''):
         search_string = {'Episode': []}
 
-        if self.show.air_by_date:
-            for show_name in set(allPossibleShowNames(self.show)):
-                ep_string = sanitizeSceneName(show_name) + ' ' + \
-                            str(ep_obj.airdate).replace('-', ' ')
-                search_string['Episode'].append(ep_string)
-        elif self.show.sports:
-            for show_name in set(allPossibleShowNames(self.show)):
-                ep_string = sanitizeSceneName(show_name) + ' ' + \
-                            str(ep_obj.airdate).replace('-', '|') + '|' + \
-                            ep_obj.airdate.strftime('%b')
-                search_string['Episode'].append(ep_string)
-        elif self.show.anime:
-            for show_name in set(allPossibleShowNames(self.show)):
-                ep_string = sanitizeSceneName(show_name) + ' ' + \
-                            "%02i" % int(ep_obj.scene_absolute_number)
-                search_string['Episode'].append(ep_string)
-        else:
-            for show_name in set(allPossibleShowNames(self.show)):
-                ep_string = sanitizeSceneName(show_name) + ' ' + \
-                            sickbeard.config.naming_ep_type[2] % {'seasonnumber': ep_obj.scene_season,
-                                                                  'episodenumber': ep_obj.scene_episode} + '|' + \
-                            sickbeard.config.naming_ep_type[0] % {'seasonnumber': ep_obj.scene_season,
-                                                                  'episodenumber': ep_obj.scene_episode} + ' %s category:tv' % add_string
-                search_string['Episode'].append(re.sub('\s+', ' ', ep_string))
+        for show_name in set(allPossibleShowNames(self.show)):
+            ep_string = sanitizeSceneName(show_name) + ' '
+            if self.show.air_by_date:
+                ep_string += str(ep_obj.airdate).replace('-', ' ')
+            elif self.show.sports:
+                ep_string += str(ep_obj.airdate).replace('-', ' ') + '|' + ep_obj.airdate.strftime('%b')
+            elif self.show.anime:
+                ep_string += "%02d" % ep_obj.scene_absolute_number
+            else:
+                ep_string += sickbeard.config.naming_ep_type[2] % {'seasonnumber': ep_obj.scene_season,
+                                                                   'episodenumber': ep_obj.scene_episode} + '|' + \
+                             sickbeard.config.naming_ep_type[0] % {'seasonnumber': ep_obj.scene_season,
+                                                                   'episodenumber': ep_obj.scene_episode} + ' category:tv'
+            if add_string:
+                ep_string += ' ' + add_string
+
+            search_string['Episode'].append(re.sub('\s+', ' ', ep_string))
 
         return [search_string]
 
 
-    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0):
+    def _get_size(self, item):
+        title, url, id, seeders, leechers, size, pubdate = item
+        return size or -1
+
+    def _doSearch(self, search_params, search_mode='eponly', epcount=0, age=0, epObj=None):
 
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
@@ -243,7 +237,7 @@ class KATProvider(generic.TorrentProvider):
                             seeders = int(item['torrent_seeds'])
                             leechers = int(item['torrent_peers'])
                             size = int(item['torrent_contentlength'])
-                        except (AttributeError, TypeError):
+                        except (AttributeError, TypeError, KeyError):
                             continue
 
                         if mode != 'RSS' and (seeders < self.minseed or leechers < self.minleech):
@@ -297,8 +291,7 @@ class KATProvider(generic.TorrentProvider):
         title, url, id, seeders, leechers, size, pubdate = item
 
         if title:
-            title = u'' + title
-            title = title.replace(' ', '.')
+            title = self._clean_title_from_provider(title)
 
         if url:
             url = url.replace('&amp;', '&')

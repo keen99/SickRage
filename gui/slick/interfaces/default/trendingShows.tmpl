@@ -70,9 +70,9 @@
 
 <div id="container">
 #if not $trending_shows
-	<div class="trakt_show" style="width:100%; margin-top:20px">
-		<p class="red-text">Trakt API did not return any results, please check your config.
-	</div>
+    <div class="trakt_show" style="width:100%; margin-top:20px">
+        <p class="red-text">Trakt API did not return any results, please check your config.
+    </div>
 #else
 #for $cur_show in $trending_shows:
     #set $show_url = 'http://www.trakt.tv/shows/%s' % $cur_show['show']['ids']['slug']
@@ -92,6 +92,9 @@
             <i>$cur_show['show']['votes'] votes</i>
             <div class="traktShowTitleIcons">
                 <a href="$sbRoot/home/addShows/addTraktShow?indexer_id=${cur_show['show']['ids']['tvdb'] or cur_show['show']['ids']['tvrage']}&amp;showName=${cur_show['show']['title']}" class="btn btn-xs">Add Show</a>
+#if $blacklist
+                <a href="$sbRoot/home/addShows/addShowToBlacklist?indexer_id=${cur_show['show']['ids']['tvdb'] or cur_show['show']['ids']['tvrage']}" class="btn btn-xs">Remove Show</a>
+#end if
             </div>
         </div>
         </div>

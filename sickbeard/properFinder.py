@@ -16,10 +16,13 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
+import time
 import datetime
 import operator
 import threading
 import traceback
+import re
+
 from search import pickBestResult
 
 import sickbeard
@@ -31,7 +34,7 @@ from sickbeard import helpers, logger
 from sickbeard import search
 from sickbeard import history
 
-from sickbeard.common import DOWNLOADED, SNATCHED, SNATCHED_PROPER, Quality
+from sickbeard.common import DOWNLOADED, SNATCHED, SNATCHED_PROPER, Quality, cpu_presets
 
 from name_parser.parser import NameParser, InvalidNameException, InvalidShowException
 
@@ -41,10 +44,6 @@ class ProperFinder():
         self.amActive = False
 
     def run(self, force=False):
-
-        if not sickbeard.DOWNLOAD_PROPERS:
-            return
-
         logger.log(u"Beginning the search for new propers")
 
         self.amActive = True
@@ -90,16 +89,20 @@ class ProperFinder():
                 logger.log(u"Error while searching " + curProvider.name + ", skipping: " + ex(e), logger.ERROR)
                 logger.log(traceback.format_exc(), logger.DEBUG)
                 continue
-            finally:
-                threading.currentThread().name = origThreadName
 
             # if they haven't been added by a different provider than add the proper to the list
             for x in curPropers:
+                if not re.search('(^|[\. _-])(proper|repack)([\. _-]|$)', x.name, re.I):
+                    logger.log(u'findPropers returned a non-proper, we have caught and skipped it but please report this', logger.WARNING)
+                    continue
+
                 name = self._genericName(x.name)
                 if not name in propers:
                     logger.log(u"Found new proper: " + x.name, logger.DEBUG)
                     x.provider = curProvider
                     propers[name] = x
+
+            threading.currentThread().name = origThreadName
 
         # take the list of unique propers and get it sorted by
         sortedPropers = sorted(propers.values(), key=operator.attrgetter('date'), reverse=True)
@@ -208,7 +211,7 @@ class ProperFinder():
             historyResults = myDB.select(
                 "SELECT resource FROM history " +
                 "WHERE showid = ? AND season = ? AND episode = ? AND quality = ? AND date >= ? " +
-                "AND action IN (" + ",".join([str(x) for x in Quality.SNATCHED]) + ")",
+                "AND action IN (" + ",".join([str(x) for x in Quality.SNATCHED + Quality.DOWNLOADED]) + ")",
                 [curProper.indexerid, curProper.season, curProper.episode, curProper.quality,
                  historyLimit.strftime(history.dateFormat)])
 
@@ -243,9 +246,11 @@ class ProperFinder():
                 result.quality = curProper.quality
                 result.release_group = curProper.release_group
                 result.version = curProper.version
+                result.content = curProper.content
 
                 # snatch it
                 search.snatchEpisode(result, SNATCHED_PROPER)
+                time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
     def _genericName(self, name):
         return name.replace(".", " ").replace("-", " ").replace("_", " ").lower()

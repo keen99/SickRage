@@ -24,10 +24,12 @@ import logging
 import logging.handlers
 import threading
 import platform
+import locale
 
 import sickbeard
 from sickbeard import classes, encodingKludge as ek
 from github import Github, InputFileContent
+import codecs
 
 # log levels
 ERROR = logging.ERROR
@@ -56,11 +58,11 @@ class CensoredFormatter(logging.Formatter, object):
 
     def format(self, record):
         msg = super(CensoredFormatter, self).format(record)
-        for k, v in censoredItems.items():
+        for k, v in censoredItems.iteritems():
             if v and len(v) > 0 and v in msg:
                 msg = msg.replace(v, len(v) * '*')
         # Needed because Newznab apikey isn't stored as key=value in a section.
-        msg = re.sub('apikey\=[^\&]*\&','apikey\=**********\&', msg)
+        msg = re.sub(r'([&?]r|[&?]apikey|[&?]api_key)=[^&]*([&\w]?)',r'\1=**********\2', msg)
         return msg
 
 
@@ -79,6 +81,8 @@ class Logger(object):
         self.fileLogging = False
         self.debugLogging = False
         self.logFile = None
+
+        self.submitter_running = False
 
     def initLogging(self, consoleLogging=False, fileLogging=False, debugLogging=False):
         self.logFile = self.logFile or os.path.join(sickbeard.LOG_DIR, 'sickrage.log')
@@ -105,7 +109,7 @@ class Logger(object):
         # console log handler
         if self.consoleLogging:
             console = logging.StreamHandler()
-            console.setFormatter(CensoredFormatter('%(asctime)s %(levelname)s::%(message)s', '%H:%M:%S'))
+            console.setFormatter(CensoredFormatter(u'%(asctime)s %(levelname)s::%(message)s', '%H:%M:%S'))
             console.setLevel(INFO if not self.debugLogging else DEBUG)
 
             for logger in self.loggers:
@@ -114,12 +118,16 @@ class Logger(object):
         # rotating log file handler
         if self.fileLogging:
             rfh = logging.handlers.RotatingFileHandler(self.logFile, maxBytes=sickbeard.LOG_SIZE, backupCount=sickbeard.LOG_NR, encoding='utf-8')
-            rfh.setFormatter(CensoredFormatter('%(asctime)s %(levelname)-8s %(message)s', '%Y-%m-%d %H:%M:%S'))
+            rfh.setFormatter(CensoredFormatter(u'%(asctime)s %(levelname)-8s %(message)s', '%Y-%m-%d %H:%M:%S'))
             rfh.setLevel(DEBUG)
 
             for logger in self.loggers:
                 logger.addHandler(rfh)
-
+                
+    def shutdown(self):
+        
+        logging.shutdown()
+        
     def log(self, msg, level=INFO, *args, **kwargs):
         meThread = threading.currentThread().getName()
         message = meThread + u" :: " + msg
@@ -144,8 +152,27 @@ class Logger(object):
             sys.exit(1)
 
     def submit_errors(self):
-        if not (sickbeard.GIT_USERNAME and sickbeard.GIT_PASSWORD and len(classes.ErrorViewer.errors) > 0):
+        if not (sickbeard.GIT_USERNAME and sickbeard.GIT_PASSWORD and sickbeard.DEBUG and len(classes.ErrorViewer.errors) > 0):
+            self.log('Please set your GitHub username and password in the config and enable debug. Unable to submit issue ticket to GitHub!')
             return
+          
+        try:
+            from versionChecker import CheckVersion
+            checkversion = CheckVersion()
+            needs_update = checkversion.check_for_new_version()
+            commits_behind = checkversion.updater.get_num_commits_behind()
+        except:
+            self.log('Could not check if your SickRage is updated, unable to submit issue ticket to GitHub!')
+            return
+
+        if commits_behind is None or commits_behind > 0:
+            self.log('Please update SickRage, unable to submit issue ticket to GitHub with an outdated version!')
+            return          
+
+        if self.submitter_running:
+            return 'RUNNING'
+
+        self.submitter_running = True
 
         gh_org = sickbeard.GIT_ORG or 'SiCKRAGETV'
         gh_repo = 'sickrage-issues'
@@ -155,18 +182,34 @@ class Logger(object):
         try:
             # read log file
             log_data = None
-            if self.logFile and os.path.isfile(self.logFile):
-                with ek.ek(open, self.logFile) as f:
+
+            if os.path.isfile(self.logFile):
+                with ek.ek(codecs.open, *[self.logFile, 'r', 'utf-8']) as f:
                     log_data = f.readlines()
-                log_data = [line for line in reversed(log_data)]
+                    
+            for i in range (1 , int(sickbeard.LOG_NR)):
+                if os.path.isfile(self.logFile + "." + str(i)) and (len(log_data) <= 500):
+                    with ek.ek(codecs.open, *[self.logFile + "." + str(i), 'r', 'utf-8']) as f:
+                            log_data += f.readlines()
+
+            log_data = [line for line in reversed(log_data)]
 
             # parse and submit errors to issue tracker
             for curError in sorted(classes.ErrorViewer.errors, key=lambda error: error.time, reverse=True)[:500]:
-                if not curError.title:
-                    continue
+                try:
+                    title_Error = str(curError.title)
+                    if not len(title_Error) or title_Error == 'None':
+                        title_Error = re.match("^[A-Z0-9\-\[\] :]+::\s*(.*)$", ek.ss(str(curError.message))).group(1)
+
+                    # if len(title_Error) > (1024 - len(u"[APP SUBMITTED]: ")):
+                    # 1000 just looks better than 1007 and adds some buffer
+                    if len(title_Error) > 1000:
+                        title_Error = title_Error[0:1000]
+                except Exception as e:
+                    self.log("Unable to get error title : " + sickbeard.exceptions.ex(e), ERROR)
 
                 gist = None
-                regex = "^(%s)\s*([A-Z]+)\s*(.+?)\s*\:\:\s*(.*)$" % curError.time
+                regex = "^(%s)\s+([A-Z]+)\s+([0-9A-Z\-]+)\s*(.*)$" % curError.time
                 for i, x in enumerate(log_data):
                     x = ek.ss(x)
                     match = re.match(regex, x)
@@ -177,14 +220,23 @@ class Logger(object):
                             if paste_data:
                                 gist = gh.get_user().create_gist(True, {"sickrage.log": InputFileContent(paste_data)})
                             break
+                    else:
+                        gist = 'No ERROR found'
 
                 message = u"### INFO\n"
-                message += u"Python Version: **" + sys.version[:120] + "**\n"
+                message += u"Python Version: **" + sys.version[:120].replace('\n','') + "**\n"
                 message += u"Operating System: **" + platform.platform() + "**\n"
+                if not 'Windows' in platform.platform():
+                    try:
+                        message += u"Locale: " + locale.getdefaultlocale()[1] + "\n"
+                    except:
+                        message += u"Locale: unknown" + "\n"                        
                 message += u"Branch: **" + sickbeard.BRANCH + "**\n"
                 message += u"Commit: SiCKRAGETV/SickRage@" + sickbeard.CUR_COMMIT_HASH + "\n"
-                if gist:
+                if gist and gist != 'No ERROR found':
                     message += u"Link to Log: " + gist.html_url + "\n"
+                else:
+                    message += u"No Log available with ERRORS: " + "\n"
                 message += u"### ERROR\n"
                 message += u"```\n"
                 message += curError.message + "\n"
@@ -192,17 +244,35 @@ class Logger(object):
                 message += u"---\n"
                 message += u"_STAFF NOTIFIED_: @SiCKRAGETV/owners @SiCKRAGETV/moderators"
 
-                issue = gh.get_organization(gh_org).get_repo(gh_repo).create_issue("[APP SUBMITTED]: " + str(curError.title), message)
-                if issue:
-                    self.log('Your issue ticket #%s was submitted successfully!' % issue.number)
+                title_Error = u"[APP SUBMITTED]: " + title_Error
+                reports = gh.get_organization(gh_org).get_repo(gh_repo).get_issues(state="all")
+
+                issue_found = False
+                issue_id = 0
+                for report in reports:
+                    if title_Error == report.title:
+                        comment = report.create_comment(message)
+                        if comment:
+                            issue_id = report.number
+                            self.log('Commented on existing issue #%s successfully!'  % issue_id )
+                            issue_found = True
+                        break
+
+                if not issue_found:
+                    issue = gh.get_organization(gh_org).get_repo(gh_repo).create_issue(title_Error, message)
+                    if issue:
+                        issue_id = issue.number
+                        self.log('Your issue ticket #%s was submitted successfully!'  % issue_id )
 
                 # clear error from error list
                 classes.ErrorViewer.errors.remove(curError)
 
-                return issue
+                self.submitter_running = False
+                return issue_id
         except Exception as e:
             self.log(sickbeard.exceptions.ex(e), ERROR)
 
+        self.submitter_running = False
 
 class Wrapper(object):
     instance = Logger()
@@ -218,4 +288,3 @@ class Wrapper(object):
 
 
 _globals = sys.modules[__name__] = Wrapper(sys.modules[__name__])
-
